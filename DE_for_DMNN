@@ -1,0 +1,405 @@
+# Author. Fernando Arce Vega
+from numpy import min, max, array, where, append, concatenate, meshgrid, linspace, vstack, size, shape, empty, nan, isnan, random, zeros, argmax, linspace
+import numpy as np
+import matplotlib.pyplot as plt
+import time
+
+
+# Closing all figures
+plt.close("all")
+
+
+# Initial H0
+def generate_initial_hyperbox(P,M):
+
+    Wmin = P.min(1)
+    Wmax = P.max(1)
+    a = M*abs(Wmax-Wmin)
+    Wmin = Wmin - a
+    Wmax = Wmax + a
+    H0 = concatenate((Wmin, Wmax), axis = 0)
+
+    return(H0)
+    
+    
+# First HC
+def FirstHP(P, T):
+    
+    # Getting HiperCubes from diff clases
+    a = list(set(T))
+    ListH = empty(2 * shape(P)[0]) * nan
+    ListC = array(a)
+    
+    
+    for c1 in a:
+        # Indices for each class
+        i = where(T == c1)[0]
+        Pnew = P[:, i]
+        minP = min(Pnew, axis = 1) - 0.15
+        maxP = max(Pnew, axis = 1) + 0.15
+    
+        appeP = append(minP, maxP)
+        ListH = vstack((ListH, appeP))
+    
+    # Cleaning ListH
+    ListH = ListH[1:, ::]
+    
+    return(ListH, ListC)
+
+
+# Second HC Division
+def DivisHC(ListH, ListC, d):
+    
+    x = shape(ListH)[0]        # Initial Dendrite Number
+    y = shape(ListH)[1]  / 2   # Dimensions
+    m = zeros((x * d, y * 2))  # New ListH
+    c = zeros(x * d)
+
+    for c1 in xrange(x):
+        # l = linspace(ListH[c1, 0], ListH[c1, y], d + 1)
+        l = linspace(ListH[c1, 1], ListH[c1, y + 1], d + 1)
+        n = ListH[c1, :]
+
+        for c2 in xrange(d):
+            m[c1 * d + c2, :] = n
+            m[c1 * d + c2, 1] = l[c2]
+            # m[c1 * d + c2, 0] = l[c2]
+            m[c1 * d + c2, y + 1] = l[c2 + 1]
+            # m[c1 * d + c2, y] = l[c2 + 1]
+            
+            # New ListC
+            c[c1 * d + c2] = ListC[c1]
+    
+    return(m ,c)
+
+
+# Morphological Nueron with Dendral Processing
+def FitFun(ListH, ListC, P, T):
+    
+    x = shape(P)[1]        # Testing Patterns
+    y = shape(ListH)[0]    # Dedrites
+    z = shape(P)[0]        # Dimensions
+    
+    temp1 = zeros(z)     
+    temp2 = zeros(y)
+    CLASS = zeros(x)
+    
+    for c1 in xrange(x):            # x
+        for c2 in xrange(y):        # y
+            for c3 in xrange(z):    # z
+                Dact = - ListH[c2, c3]                       # Activation Dendrite
+                Dinv = - ListH[c2, c3 + z]                   # Inhibition Dendrite
+                X = P[c3][c1]                                # Pattern
+                temp1[c3] = min((X + Dact, - (X + Dinv)))    # Dendrite
+
+            temp2[c2] = min(temp1)
+            
+        CLASS[c1] = ListC[argmax(temp2)] 
+            
+    fitness = float(sum(CLASS != T)) / shape(T)[0]
+
+    return(fitness) 
+       
+
+# Differential Evolution Algorithm for DMN Training
+def deDMNtraining(ListH, ListC):
+
+    class People:
+        pass
+    
+    # Initialize the population
+    parents = []
+
+    for i in range(pop_size):
+        p = People()
+                
+        # Random population
+        a = random.random((shape(ListH)[0] ,1))* 1.2
+        p.paramH = a * ListH
+        p.paramC = ListC
+        p.fitness = 0.0
+        parents.append(p)
+        
+    # Error vector
+    er_v = array([])
+    
+    # Counters
+    i_c = 0
+    p_c = 0
+        
+    b_fitness = 1
+    bestH = ListH
+    bestC = ListC
+
+    while i_c < iter_max: # iter_max
+        
+        print('          ')
+        print('Iteration: {} from: {}').format(i_c + 1, iter_max)
+        print('          ')
+        
+        for p in parents:
+            
+            # Mutation Factor
+            if p_c % M == 0:
+                li = range(0, size(ListC))
+                np.random.shuffle(li)
+                p.paramC = ListC[li]
+                
+                
+            # Parent´s fitness
+            p_fitness = FitFun(p.paramH, p.paramC, P, T)
+        
+            # Choosing shuffle parents
+            l = range(0, pop_size)
+            np.random.shuffle(l)
+
+            # a = parents[l[0]]
+            # a = a.paramH
+        
+            b = parents[l[1]]
+            b = b.paramH
+
+            c = parents[l[2]]
+            c = c.paramH
+        
+            F = random.random((shape(ListH)[0] ,1))
+        
+            # DE operator
+            # DEO = a + F*(b - c)
+            DEO = bestH + F*(b - c)
+            
+            # Son´s fitness
+            s_fitness = FitFun(DEO, p.paramC, P, T)
+                                    
+            if p_fitness < b_fitness:
+                b_fitness = p_fitness
+                bestH = p.paramH
+                bestC = p.paramC
+                
+            if s_fitness < b_fitness:
+                b_fitness = s_fitness
+                bestH = DEO
+                bestC = p.paramC
+
+            if s_fitness < p_fitness:
+                p.paramH = DEO
+                
+            print('s_fitness: {}').format(s_fitness)
+            print('p_fitness: {}').format(p_fitness)
+            print('b_fitness: {}').format(b_fitness)
+                            
+            # Error vector
+            er_v = append(er_v, b_fitness)      
+            
+            p_c += 1
+               
+        i_c += 1
+        
+        # if s_err < err_crit:
+            # break
+        
+        # Progress bar. '.' = 10%
+        if i % (10 * iter_max/1) == 0:
+            print '.'
+    
+    return(bestH, bestC, er_v)
+     
+
+def plottingDat(P, T, ListH, ListC, d, fi):
+
+    zoom = 1.2
+    rec = shape(ListH)[0]
+    lis = list(set(T))
+    col = ['blue', 'green', 'red']
+    sha = ['o', '', '']
+    fig = plt.figure(fi)
+    axe = fig.add_subplot(111)
+     
+    for c1 in xrange(size(lis)):
+         i = where(T == lis[c1])[0]
+         P1 = P[0, i]
+         P2 = P[1, i] 
+         plt.plot(P1, P2, 'o')
+         plt.hold = True
+         
+         for c2 in xrange(d):
+             Pm = ListH[c1*d + c2, 0: 2]
+             Px = ListH[c1*d + c2, 2::]
+             Px = abs(Px - Pm)
+             rec = plt.matplotlib.patches.Rectangle((Pm[0], Pm[1]), Px[0], Px[1], fill = False, edgecolor = col[c1])
+             axe.add_patch(rec)
+             plt.hold = True
+
+    plt.xlim([-5, 5.5])
+    plt.ylim([-5, 6])
+    # plt.axis(zoom * array([H0[0], H0[2], H0[1], H0[3]]))
+    plt.show() 
+    plt.title('DE training algorithm for DMNN')
+    plt.xlabel('X1')
+    plt.ylabel('X2')
+                                    
+
+# Plotting Original Data
+def plotOriDat(P, T):
+    
+    zoom = 1.2
+    plt.figure(0)
+    l = list(set(T))
+    for c0 in l:
+        s = 'class ' + str(c0)
+        ind = where(c0 == T)[0]
+        P1 = P[0, ind]
+        P2 = P[1, ind]
+        plt.plot(P1, P2, 'o', label = s)
+        plt.hold = True
+
+    legend = plt.legend(loc = 'upper right', numpoints = 1)
+    plt.title('A')
+    # plt.axis(zoom * array([H0[0], H0[2], H0[1], H0[3]]))
+    plt.title('B')
+    plt.xlim([-5, 5.5])
+    plt.ylim([-5, 6])
+    plt.xlabel('X1')
+    plt.ylabel('X2')
+    
+   
+# Morphological Nueron with Dendral Processing
+def FitFun2(ListH, ListC, P):
+    
+    x = 1                  # Testing Patterns
+    y = shape(ListH)[0]    # Dedrites
+    z = size(P)           # Dimensions
+    
+    temp1 = zeros(z)     
+    temp2 = zeros(y)
+    CLASS = zeros(x)
+    
+    for c1 in xrange(x):            # x
+        for c2 in xrange(y):        # y
+            for c3 in xrange(z):    # z
+                Dact = - ListH[c2, c3]                        # Activation Dendrite
+                Dinv = - ListH[c2, c3 + z]                    # Inhibition Dendrite
+                X = P[c3]                                     # Pattern
+                temp1[c3] = min((X + Dact, - (X + Dinv)))     # Dendrite
+
+            temp2[c2] = min(temp1)
+            
+        CLASS = ListC[argmax(temp2)] 
+            
+    fitness = CLASS
+
+    return(fitness) 
+    
+    
+def DecBoun(P, T, ListHnew, ListCnew, d, fi, H0):
+
+    zoom = 1.2
+    x1 = linspace(zoom * H0[0], zoom * H0[2], 100)
+    x2 = linspace(zoom * H0[1], zoom * H0[3], 100)
+    Y = zeros((size(x1), size(x2)))
+    
+    for c1 in xrange(size(x1)):
+        for c2 in xrange(size(x2)):
+            Pa = array([x1[c2], x2[c1]])
+            y = FitFun2(ListHnew, ListCnew, Pa)
+            Y[c1, c2] = y
+            
+    [X1, X2] = meshgrid(x1,x2)
+    # ff0000  Red
+    # 006400 Green
+    # 0000cd Blue
+    # ffff00 Yellow
+    
+    # plt.contourf(X1, X2, Y, extend='both', colors=('#0000cd', '#ffff00', '#ff0000', '#006400', '#ffff00'))
+    # level = linspace(-10, 3, 100)
+    plt.contourf(X1, X2, Y)
+    plt.xlim([-5, 5.5])
+    plt.ylim([-5, 6]) 
+    # plt.xlim([-3, 4.5])
+    # plt.ylim([-4, 5])
+    plt.title('Decision Boundary for DE training algorithm')
+    plt.xlabel('X1')
+    plt.ylabel('X2')   
+
+
+def ComFun(ListHnew, ListCnew):
+    H1 = ListHnew[1, 1]
+    H2 = ListHnew[2, 3]
+    zo = 10
+    x1 = linspace(H1 - zo, H1 + zo, 100)
+    x2 = linspace(H2 - zo, H2 + zo, 100)
+    Y = zeros((size(x1), size(x2)))
+    List_H = ListHnew
+    
+    for c1 in xrange(size(x1)):
+        List_H[1, 1] = x1[c1] 
+
+        for c2 in xrange(size(x2)):
+            List_H[2, 3] = x2[c2]
+            Pa = array([x1[c2], x2[c1]])
+            y = FitFun2(List_H, ListCnew, Pa)
+            Y[c1, c2] = y
+ 
+    [X1, X2] = meshgrid(x1,x2)
+    
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    surf = ax.plot_surface(X1, X2, Y/max(Y), rstride=1, cstride=1, cmap=cm.coolwarm,
+                       linewidth=0, antialiased=False)
+    ax.set_xlabel('$w_1$')
+    ax.set_ylabel('$w_0$')
+    ax.set_zlabel('Error')
+
+
+#########################################
+# Data In 
+import dataIn
+reload(dataIn)
+P, Ptest, T, Ttest = dataIn.data()
+
+#########################################
+
+
+#################################
+iter_max =                           # Max Generations or Iterarions
+pop_size =                           # Population size; Must be major to 3
+err_crit =                           # Critical error
+d =                                  # Dendrites per class
+M =                                  # Mutation operator
+#################################
+# Initial H0
+H0 = generate_initial_hyperbox(P, 0.15)
+         
+# First HC
+ListH, ListC = FirstHP(P, T)
+# Plotting initial HC
+# plottingDat(P, T, ListH, ListC, 1, 1)       
+ 
+# Second HC
+ListH, ListC = DivisHC(ListH, ListC, d)
+
+# Plotting division HC
+# plottingDat(P, T, ListH, ListC, d, 2)
+
+# Diferential Evolution Training
+ListHnew, ListCnew, er_v = deDMNtraining(ListH, ListC)
+
+# Plotting final HC
+# plottingDat(P, T, ListHnew, ListCnew, d, 3)
+
+# Plotting decision boundaries
+# DecBoun(P, T, ListHnew, ListCnew, d, 4, H0)
+
+
+print('          ')
+print('          ')
+print('Ready Testing')
+
+Etrai = FitFun(ListHnew, ListCnew, P, T)
+Etest = FitFun(ListHnew, ListCnew, Ptest, Ttest)
+            
+print('          ')
+print('Training error: {}').format(Etrai)
+print('Testing error: {}').format(Etest)
+print('Dendrites: {}').format(shape(ListHnew)[0])
+print('          ')
